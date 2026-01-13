@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-PROJECT_DIR="/Users/zhengaihua/WorkSpace/corporate-risk-monitor"
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$PROJECT_DIR/monitor.pid"
 LOG_FILE="$PROJECT_DIR/monitor.log"
 SCRIPT_NAME="$0"

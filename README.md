@@ -54,7 +54,7 @@ python monitor.py
 
 2. 编辑 crontab (`crontab -e`) 并添加以下行（每天 10:00 和 17:00 执行）：
    ```bash
-   0 10,17 * * * /Users/zhengaihua/WorkSpace/corporate-risk-monitor/run_monitor.sh >> /Users/zhengaihua/WorkSpace/corporate-risk-monitor/monitor.log 2>&1
+   0 10,17 * * * /path/to/corporate-risk-monitor/run_monitor.sh >> /path/to/corporate-risk-monitor/monitor.log 2>&1
    ```
 
 ## 功能说明
