@@ -161,13 +161,31 @@ case "$1" in
         fi
         ;;
 
+    start-all)
+        echo "Starting ALL services..."
+        "$0" start
+        "$0" start-web
+        ;;
+
+    stop-all)
+        echo "Stopping ALL services..."
+        "$0" stop
+        "$0" stop-web
+        ;;
+
+    status-all)
+        "$0" status
+        echo "----------------------------------------"
+        "$0" status-web
+        ;;
+
     monitor_loop)
         # Internal argument to run the loop logic
         monitor_loop
         ;;
 
     *)
-        echo "Usage: $0 {start|stop|restart|status|start-web|stop-web|status-web}"
+        echo "Usage: $0 {start|stop|restart|status|start-web|stop-web|status-web|start-all|stop-all|status-all}"
         exit 1
         ;;
 esac
