@@ -4,6 +4,9 @@
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$PROJECT_DIR/monitor.pid"
 LOG_FILE="$PROJECT_DIR/monitor.log"
+WEB_PID_FILE="$PROJECT_DIR/web.pid"
+WEB_LOG_FILE="$PROJECT_DIR/web.log"
+WEB_PORT=8000
 SCRIPT_NAME="$0"
 
 # Navigate to project directory
@@ -102,6 +105,61 @@ case "$1" in
             echo "Monitor is NOT running."
         fi
         ;;
+    
+    start-web)
+        if [ -f "$WEB_PID_FILE" ]; then
+            PID=$(cat "$WEB_PID_FILE")
+            if ps -p "$PID" > /dev/null 2>&1; then
+                echo "Web server is already running (PID: $PID)."
+                echo "Access at http://localhost:$WEB_PORT"
+                exit 1
+            else
+                echo "Found stale Web PID file. Removing..."
+                rm "$WEB_PID_FILE"
+            fi
+        fi
+
+        echo "Starting Web server on port $WEB_PORT..."
+        export PORT=$WEB_PORT
+        nohup python server.py >> "$WEB_LOG_FILE" 2>&1 &
+        
+        NEW_PID=$!
+        echo "$NEW_PID" > "$WEB_PID_FILE"
+        echo "Web server started with PID: $NEW_PID"
+        echo "Access at http://localhost:$WEB_PORT"
+        ;;
+
+    stop-web)
+        if [ ! -f "$WEB_PID_FILE" ]; then
+            echo "Web server is not running."
+            exit 1
+        fi
+
+        PID=$(cat "$WEB_PID_FILE")
+        if ps -p "$PID" > /dev/null 2>&1; then
+            echo "Stopping Web server (PID: $PID)..."
+            kill "$PID"
+            rm "$WEB_PID_FILE"
+            echo "Web server stopped."
+        else
+            echo "Web process $PID not found. Cleaning up stale PID file."
+            rm "$WEB_PID_FILE"
+        fi
+        ;;
+
+    status-web)
+        if [ -f "$WEB_PID_FILE" ]; then
+            PID=$(cat "$WEB_PID_FILE")
+            if ps -p "$PID" > /dev/null 2>&1; then
+                echo "Web server is running. PID: $PID"
+                echo "URL: http://localhost:$WEB_PORT"
+            else
+                echo "Web server is NOT running (Stale PID file found)."
+            fi
+        else
+            echo "Web server is NOT running."
+        fi
+        ;;
 
     monitor_loop)
         # Internal argument to run the loop logic
@@ -109,7 +167,7 @@ case "$1" in
         ;;
 
     *)
-        echo "Usage: $0 {start|stop|restart|status}"
+        echo "Usage: $0 {start|stop|restart|status|start-web|stop-web|status-web}"
         exit 1
         ;;
 esac

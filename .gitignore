@@ -210,3 +210,7 @@ __marimo__/
 risk_report.html
 monitor.log
 monitor.pid
+
+# Web server artifacts
+web.log
+web.pid
