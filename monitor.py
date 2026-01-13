@@ -112,7 +112,58 @@ def get_bankruptcy_info(company_name):
 
     return bankruptcy_data
 
-def generate_html(risks, bankruptcy_data):
+def get_shixin_info(name, code):
+    print(f"正在查询中国执行信息公开网: {name} / {code}...")
+    shixin_data = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+            )
+            page = context.new_page()
+            
+            # 访问失信被执行人查询页
+            url = "http://zxgk.court.gov.cn/shixin/"
+            try:
+                page.goto(url, timeout=30000)
+                page.wait_for_load_state("networkidle")
+                
+                # 填写姓名/名称
+                page.locator("#pName").fill(name)
+                # 填写身份证号码/组织机构代码
+                page.locator("#pCode").fill(code)
+                
+                # 注意：该网站通常有验证码 (yzm)。
+                # 如果检测到验证码输入框，自动查询可能会失败
+                if page.locator("#pYzm").is_visible():
+                    shixin_data.append("检测到图形验证码，无法自动完成查询。请点击报告中的链接手动核实。")
+                else:
+                    # 尝试点击查询
+                    page.locator("text=查询").click()
+                    page.wait_for_timeout(3000)
+                    
+                    # 检查结果
+                    if page.locator("text=验证码错误").is_visible():
+                         shixin_data.append("验证码校验失败（此网站有强制验证码）。")
+                    elif page.locator("text=没有找到").is_visible():
+                         pass # 无记录
+                    else:
+                         # 抓取表格内容
+                         rows = page.locator("tr").all()
+                         for row in rows:
+                             text = row.inner_text().strip().replace("\n", " ")
+                             if name in text:
+                                 shixin_data.append(text)
+            except Exception as e:
+                shixin_data.append(f"查询异常: {str(e)[:50]}")
+            
+            browser.close()
+    except Exception as e:
+        shixin_data.append(f"驱动异常: {e}")
+    return shixin_data
+
+def generate_html(risks, bankruptcy_data, shixin_data):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     qcc_url = f"https://www.qcc.com/web/search?key={urllib.parse.quote(COMPANY_NAME)}"
     tyc_url = f"https://www.tianyancha.com/search?key={urllib.parse.quote(COMPANY_NAME)}"
@@ -133,6 +184,25 @@ def generate_html(risks, bankruptcy_data):
         <div class="card">
             <h2>⚖️ 破产重整信息 (自动查询结果)</h2>
             <p class='status-ok'>✅ 暂未在“全国企业破产重整案件信息网”自动检索到相关记录。</p>
+        </div>
+        """
+
+    shixin_html = ""
+    if shixin_data:
+        list_items = "".join([f"<li class='risk-item'>❌ {item}</li>" for item in shixin_data])
+        shixin_html = f"""
+        <div class="card" style="border-left: 5px solid #c0392b;">
+            <h2>❌ 失信被执行人信息 (自动查询结果)</h2>
+            <ul class="risk-list">
+                {list_items}
+            </ul>
+        </div>
+        """
+    else:
+        shixin_html = f"""
+        <div class="card">
+            <h2>👤 失信被执行人信息 (自动查询结果)</h2>
+            <p class='status-ok'>✅ 暂未在中国执行信息公开网发现该姓名/代码的失信记录。</p>
         </div>
         """
 
@@ -174,6 +244,7 @@ def generate_html(risks, bankruptcy_data):
     </div>
 
     {bankruptcy_html}
+    {shixin_html}
 
     <div class="card">
         <h2>🔍 实时舆情检测 (Baidu)</h2>
@@ -218,7 +289,8 @@ def main():
     print(f"正在监控: {COMPANY_NAME}...")
     risks = get_baidu_news()
     bankruptcy_data = get_bankruptcy_info(COMPANY_NAME)
-    generate_html(risks, bankruptcy_data)
+    shixin_data = get_shixin_info("刘斌", "MA0044Y57")
+    generate_html(risks, bankruptcy_data, shixin_data)
 
 if __name__ == "__main__":
     main()
