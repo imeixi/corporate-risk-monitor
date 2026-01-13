@@ -15,11 +15,11 @@
    source venv/bin/activate
    ```
 
-2. **依赖已安装** (requests, beautifulsoup4)。如果需要重新安装：
+2. **安装依赖**:
    ```bash
    pip install -r requirements.txt
+   playwright install
    ```
-   *(注: 本项目依赖较少，直接运行即可)*
 
 ## 使用方法
 

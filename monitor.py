@@ -5,6 +5,7 @@ import urllib.parse
 import sys
 import datetime
 import os
+from playwright.sync_api import sync_playwright
 
 # Company Information
 COMPANY_NAME = "北京中兵数字科技集团有限公司"
@@ -39,11 +40,102 @@ def get_baidu_news():
         print(f"Error fetching news: {e}")
     return risks
 
-def generate_html(risks):
+def get_bankruptcy_info(company_name):
+    print(f"正在查询全国企业破产重整案件信息网: {company_name}...")
+    bankruptcy_data = []
+    try:
+        with sync_playwright() as p:
+            # 启动浏览器
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+            )
+            page = context.new_page()
+            
+            # 访问目标网站
+            url = "https://pccz.court.gov.cn/pcajxxw/index/xxwsy"
+            try:
+                page.goto(url, timeout=30000)
+                page.wait_for_load_state("networkidle")
+                
+                # 定位输入框：由于没有确切ID，尝试通过 placeholder 或通用属性
+                # 常见 placeholder: "请输入债务人名称", "请输入案号" 等
+                # 尝试找到页面上主要的搜索输入框
+                search_input = page.locator("input[placeholder*='名称'], input[placeholder*='案号']").first
+                if not search_input.is_visible():
+                     # 如果找不到特定placeholder，尝试找所有文本输入框的第一个
+                     search_input = page.locator("input[type='text']").first
+
+                if search_input.is_visible():
+                    search_input.fill(company_name)
+                    
+                    # 点击查询按钮 (通常包含 "查询" 或 "搜索" 文本)
+                    search_btn = page.locator("text=查询").first
+                    if not search_btn.is_visible():
+                         search_btn = page.locator("button").filter(has_text="查询").first
+                    
+                    if search_btn.is_visible():
+                        search_btn.click()
+                        # 等待数据加载
+                        page.wait_for_timeout(3000)
+                        
+                        # 尝试抓取结果
+                        # 假设结果会在表格中显示
+                        # 寻找包含公司名称的行
+                        rows = page.locator("tr").filter(has_text=company_name).all()
+                        if rows:
+                            for row in rows:
+                                text = row.inner_text().strip().replace("\n", " ")
+                                if text:
+                                    bankruptcy_data.append(text)
+                        else:
+                            # 检查是否有明确的 "无记录" 提示
+                            if page.locator("text=没有找到").is_visible() or page.locator("text=无记录").is_visible():
+                                pass # 确认为空
+                            else:
+                                # 也许是布局不同，尝试获取页面主要文本作为快照
+                                pass 
+                    else:
+                        bankruptcy_data.append("未找到查询按钮，无法自动提交。")
+                else:
+                    bankruptcy_data.append("未找到搜索框，无法自动输入。")
+
+            except Exception as e:
+                print(f"页面操作异常: {e}")
+                bankruptcy_data.append(f"查询过程出错: {str(e)[:100]}")
+
+            browser.close()
+            
+    except Exception as e:
+        print(f"Playwright 运行失败 (请确保已运行 'playwright install'): {e}")
+        bankruptcy_data.append("自动化浏览器启动失败，请检查环境。")
+
+    return bankruptcy_data
+
+def generate_html(risks, bankruptcy_data):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     qcc_url = f"https://www.qcc.com/web/search?key={urllib.parse.quote(COMPANY_NAME)}"
     tyc_url = f"https://www.tianyancha.com/search?key={urllib.parse.quote(COMPANY_NAME)}"
     
+    bankruptcy_html = ""
+    if bankruptcy_data:
+        list_items = "".join([f"<li class='risk-item'>⚠️ {item}</li>" for item in bankruptcy_data])
+        bankruptcy_html = f"""
+        <div class="card" style="border-left: 5px solid #e74c3c;">
+            <h2>⚠️ 破产重整信息 (自动查询结果)</h2>
+            <ul class="risk-list">
+                {list_items}
+            </ul>
+        </div>
+        """
+    else:
+        bankruptcy_html = f"""
+        <div class="card">
+            <h2>⚖️ 破产重整信息 (自动查询结果)</h2>
+            <p class='status-ok'>✅ 暂未在“全国企业破产重整案件信息网”自动检索到相关记录。</p>
+        </div>
+        """
+
     html_content = f"""
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -80,6 +172,8 @@ def generate_html(risks):
             <div><strong>信用代码:</strong> {CREDIT_CODE}</div>
         </div>
     </div>
+
+    {bankruptcy_html}
 
     <div class="card">
         <h2>🔍 实时舆情检测 (Baidu)</h2>
@@ -123,7 +217,8 @@ def generate_html(risks):
 def main():
     print(f"正在监控: {COMPANY_NAME}...")
     risks = get_baidu_news()
-    generate_html(risks)
+    bankruptcy_data = get_bankruptcy_info(COMPANY_NAME)
+    generate_html(risks, bankruptcy_data)
 
 if __name__ == "__main__":
     main()
