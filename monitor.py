@@ -117,36 +117,85 @@ def get_shixin_info(name, code):
     shixin_data = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            # 添加反爬参数
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"]
+            )
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
             )
             page = context.new_page()
+            page.set_default_timeout(60000)
             
             # 访问失信被执行人查询页
             url = "http://zxgk.court.gov.cn/shixin/"
             try:
-                page.goto(url, timeout=30000)
+                # 增加超时时间到 60 秒
+                page.goto(url)
                 page.wait_for_load_state("networkidle")
                 
-                # 填写姓名/名称
-                page.locator("#pName").fill(name)
+                # 等待输入框出现 (尝试多个常见ID)
+                # pName: 被执行人姓名/名称
+                # pCardNum / pCode: 身份证号码/组织机构代码
+                name_input = page.locator("#pName, input[name='pName']").first
+                name_input.wait_for(state="visible", timeout=60000)
+                name_input.fill(name)
+
                 # 填写身份证号码/组织机构代码
-                page.locator("#pCode").fill(code)
-                
-                # 注意：该网站通常有验证码 (yzm)。
-                # 如果检测到验证码输入框，自动查询可能会失败
-                if page.locator("#pYzm").is_visible():
-                    shixin_data.append("检测到图形验证码，无法自动完成查询。请点击报告中的链接手动核实。")
+                code_input = page.locator("#pCardNum, #pCode, input[name='pCardNum'], input[name='cardNum']").first
+                if code_input.is_visible():
+                    code_input.fill(code)
                 else:
-                    # 尝试点击查询
-                    page.locator("text=查询").click()
-                    page.wait_for_timeout(3000)
+                    print("未找到代码输入框，尝试直接搜索...")
+
+                # 尝试选择省份: 北京
+                try:
+                    # 查找省份下拉框 (假设是页面上唯一的或第一个 select)
+                    province_select = page.locator("select").first
+                    if province_select.is_visible():
+                        # 尝试通过 label 选择
+                        # 常见的省份文本可能是 "北京市" 或 "北京"
+                        # 先获取所有选项看看
+                        options = province_select.locator("option").all_inner_texts()
+                        target_option = None
+                        for opt in options:
+                            if "北京" in opt:
+                                target_option = opt
+                                break
+                        
+                        if target_option:
+                            province_select.select_option(label=target_option)
+                            print(f"已选择省份: {target_option}")
+                except Exception as e:
+                    print(f"选择省份失败 (非致命错误): {e}")
+                
+                # 处理验证码
+                yzm_input = page.locator("#pYzm")
+                if yzm_input.is_visible():
+                    # 尝试找到验证码图片并点击刷新
+                    captcha_img = page.locator("img[src*='captcha'], img[src*='yzm'], #yzmImg").first
+                    if captcha_img.is_visible():
+                        print("点击验证码图片以刷新...")
+                        captcha_img.click()
+                        # 等待验证码刷新
+                        page.wait_for_timeout(3000)
+                    
+                    shixin_data.append("检测到图形验证码，程序尝试刷新但无法自动识别。请点击报告中的链接手动核实。")
+                else:
+                    # 尝试点击查询 (使用更精确的定位器)
+                    search_btn = page.locator("button:has-text('查询'), input[value='查询'], .search_btn").first
+                    if search_btn.is_visible():
+                        search_btn.click()
+                        page.wait_for_timeout(3000)
+                    else:
+                        # 最后的尝试
+                         page.locator("text=查询").first.click()
                     
                     # 检查结果
-                    if page.locator("text=验证码错误").is_visible():
+                    if page.locator("text=验证码错误").first.is_visible():
                          shixin_data.append("验证码校验失败（此网站有强制验证码）。")
-                    elif page.locator("text=没有找到").is_visible():
+                    elif page.locator("text=没有找到").first.is_visible():
                          pass # 无记录
                     else:
                          # 抓取表格内容
@@ -156,7 +205,7 @@ def get_shixin_info(name, code):
                              if name in text:
                                  shixin_data.append(text)
             except Exception as e:
-                shixin_data.append(f"查询异常: {str(e)[:50]}")
+                shixin_data.append(f"查询异常: {str(e)[:100]}")
             
             browser.close()
     except Exception as e:
