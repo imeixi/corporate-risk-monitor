@@ -29,6 +29,34 @@
 python monitor.py
 ```
 
+## 飞书通知设置
+
+1. 在飞书群组中添加 "自定义机器人"。
+2. 获取机器人的 Webhook URL。
+3. 编辑 `run_monitor.sh` 文件，设置 `FEISHU_WEBHOOK_URL` 变量：
+   ```bash
+   export FEISHU_WEBHOOK_URL="你的飞书Webhook地址"
+   ```
+   或者在运行前设置环境变量：
+   ```bash
+   export FEISHU_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/xxxx"
+   python monitor.py
+   ```
+
+## 定时任务设置 (Mac/Linux)
+
+本项目包含 `run_monitor.sh` 脚本用于定时执行。
+
+1. 确保脚本有执行权限：
+   ```bash
+   chmod +x run_monitor.sh
+   ```
+
+2. 编辑 crontab (`crontab -e`) 并添加以下行（每天 10:00 和 17:00 执行）：
+   ```bash
+   0 10,17 * * * /Users/zhengaihua/WorkSpace/corporate-risk-monitor/run_monitor.sh >> /Users/zhengaihua/WorkSpace/corporate-risk-monitor/monitor.log 2>&1
+   ```
+
 ## 功能说明
 
 1. **舆情监控**: 自动搜索百度新闻和网页，查找包含 "破产", "跑路", "欠薪", "被执行" 等关键词的最新信息。

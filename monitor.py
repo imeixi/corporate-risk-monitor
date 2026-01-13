@@ -212,6 +212,60 @@ def get_shixin_info(name, code):
         shixin_data.append(f"驱动异常: {e}")
     return shixin_data
 
+def send_feishu_notification(risks, bankruptcy_data, shixin_data):
+    webhook_url = os.environ.get("FEISHU_WEBHOOK_URL")
+    if not webhook_url:
+        print("\n[!] 未配置 FEISHU_WEBHOOK_URL 环境变量，跳过发送飞书通知。")
+        return
+
+    risk_count = len(risks)
+    bankruptcy_count = len(bankruptcy_data)
+    shixin_count = len(shixin_data)
+    total_risks = risk_count + bankruptcy_count + shixin_count
+
+    if total_risks == 0:
+        title = "✅ 企业风险监控日报 - 一切正常"
+        color = "green"
+    else:
+        title = f"⚠️ 企业风险警告 - 发现 {total_risks} 条风险"
+        color = "red"
+
+    # 构建卡片内容
+    elements = [
+        {"tag": "div", "text": {"tag": "lark_md", "content": f"**监控对象:** {COMPANY_NAME}\n**查询时间:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}},
+        {"tag": "hr"}
+    ]
+
+    if bankruptcy_data:
+        text = "**【破产重整】:**\n" + "\n".join([f"- {item}" for item in bankruptcy_data])
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": text}})
+
+    if shixin_data:
+        text = "**【失信被执行】:**\n" + "\n".join([f"- {item}" for item in shixin_data])
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": text}})
+
+    if risks:
+        text = "**【舆情风险】:**\n" + "\n".join([f"- [{r['title']}]({r['link']})" for r in risks[:5]])
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": text}})
+
+    if total_risks == 0:
+         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "暂未发现破产、失信或明显负面舆情。"}})
+
+    card = {
+        "config": {"wide_screen_mode": True},
+        "header": {"title": {"tag": "plain_text", "content": title}, "template": color},
+        "elements": elements
+    }
+
+    try:
+        response = requests.post(webhook_url, json={"msg_type": "interactive", "card": card})
+        if response.status_code == 200:
+            print("\n[√] 飞书通知发送成功")
+        else:
+            print(f"\n[x] 飞书通知发送失败: {response.text}")
+    except Exception as e:
+        print(f"\n[x] 发送飞书异常: {e}")
+
 def generate_html(risks, bankruptcy_data, shixin_data):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     qcc_url = f"https://www.qcc.com/web/search?key={urllib.parse.quote(COMPANY_NAME)}"
@@ -340,6 +394,7 @@ def main():
     bankruptcy_data = get_bankruptcy_info(COMPANY_NAME)
     shixin_data = get_shixin_info("刘斌", "MA0044Y57")
     generate_html(risks, bankruptcy_data, shixin_data)
+    send_feishu_notification(risks, bankruptcy_data, shixin_data)
 
 if __name__ == "__main__":
     main()
