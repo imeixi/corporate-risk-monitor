@@ -24,7 +24,7 @@ class ReportHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
         
-        return super().do_GET(self)
+        return super().do_GET()
 
 if __name__ == "__main__":
     # Allow port to be set via environment variable
