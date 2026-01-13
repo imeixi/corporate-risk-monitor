@@ -115,29 +115,50 @@ def get_bankruptcy_info(company_name):
 def get_shixin_info(name, code):
     print(f"正在查询中国执行信息公开网: {name} / {code}...")
     shixin_data = []
+    
+    # 浏览器启动参数优化
+    browser_args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-accelerated-2d-canvas",
+        "--disable-gpu",
+    ]
+
     try:
         with sync_playwright() as p:
-            # 添加反爬参数
             browser = p.chromium.launch(
                 headless=True,
-                args=["--disable-blink-features=AutomationControlled"]
+                args=browser_args
             )
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+                viewport={"width": 1920, "height": 1080},
+                device_scale_factor=1,
             )
+            
+            # 注入反爬脚本: 隐藏 webdriver 属性
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """)
+
             page = context.new_page()
             page.set_default_timeout(60000)
             
             # 访问失信被执行人查询页
             url = "http://zxgk.court.gov.cn/shixin/"
             try:
-                # 增加超时时间到 60 秒
                 page.goto(url)
                 page.wait_for_load_state("networkidle")
                 
-                # 等待输入框出现 (尝试多个常见ID)
-                # pName: 被执行人姓名/名称
-                # pCardNum / pCode: 身份证号码/组织机构代码
+                # 检查是否被拦截/验证码页面
+                if "验证" in page.title():
+                     print("警告: 可能遇到了验证码拦截页面")
+
+                # 等待输入框出现
                 name_input = page.locator("#pName, input[name='pName']").first
                 name_input.wait_for(state="visible", timeout=60000)
                 name_input.fill(name)
@@ -151,12 +172,8 @@ def get_shixin_info(name, code):
 
                 # 尝试选择省份: 北京
                 try:
-                    # 查找省份下拉框 (假设是页面上唯一的或第一个 select)
                     province_select = page.locator("select").first
                     if province_select.is_visible():
-                        # 尝试通过 label 选择
-                        # 常见的省份文本可能是 "北京市" 或 "北京"
-                        # 先获取所有选项看看
                         options = province_select.locator("option").all_inner_texts()
                         target_option = None
                         for opt in options:
@@ -173,23 +190,19 @@ def get_shixin_info(name, code):
                 # 处理验证码
                 yzm_input = page.locator("#pYzm")
                 if yzm_input.is_visible():
-                    # 尝试找到验证码图片并点击刷新
                     captcha_img = page.locator("img[src*='captcha'], img[src*='yzm'], #yzmImg").first
                     if captcha_img.is_visible():
                         print("点击验证码图片以刷新...")
                         captcha_img.click()
-                        # 等待验证码刷新
                         page.wait_for_timeout(3000)
-                    
                     shixin_data.append("检测到图形验证码，程序尝试刷新但无法自动识别。请点击报告中的链接手动核实。")
                 else:
-                    # 尝试点击查询 (使用更精确的定位器)
+                    # 点击查询
                     search_btn = page.locator("button:has-text('查询'), input[value='查询'], .search_btn").first
                     if search_btn.is_visible():
                         search_btn.click()
                         page.wait_for_timeout(3000)
                     else:
-                        # 最后的尝试
                          page.locator("text=查询").first.click()
                     
                     # 检查结果
@@ -198,13 +211,13 @@ def get_shixin_info(name, code):
                     elif page.locator("text=没有找到").first.is_visible():
                          pass # 无记录
                     else:
-                         # 抓取表格内容
                          rows = page.locator("tr").all()
                          for row in rows:
                              text = row.inner_text().strip().replace("\n", " ")
                              if name in text:
                                  shixin_data.append(text)
             except Exception as e:
+                print(f"查询异常详情: {e}")
                 shixin_data.append(f"查询异常: {str(e)[:100]}")
             
             browser.close()
