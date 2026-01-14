@@ -5,8 +5,10 @@ REM Configuration
 set "PROJECT_DIR=%~dp0"
 set "PID_FILE=%PROJECT_DIR%monitor.pid"
 set "LOG_FILE=%PROJECT_DIR%monitor.log"
+set "LOG_ERR_FILE=%PROJECT_DIR%monitor.err"
 set "WEB_PID_FILE=%PROJECT_DIR%web.pid"
 set "WEB_LOG_FILE=%PROJECT_DIR%web.log"
+set "WEB_LOG_ERR_FILE=%PROJECT_DIR%web.err"
 set "WEB_PORT=8000"
 
 REM Ensure we are in the project directory
@@ -51,8 +53,8 @@ goto :eof
 :launch_monitor
     echo Starting monitor in background...
     REM Using PowerShell to start process hidden and get PID
-    REM Using cmd redirection >> log 2>&1 to combine streams
-    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c """%~f0""" monitor_loop >> """%LOG_FILE%""" 2>&1' -WorkingDirectory '%PROJECT_DIR%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%PID_FILE%' -Encoding ASCII"
+    REM Using comma-separated ArgumentList and escaped quotes for robustness
+    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', '\"%~f0\"', 'monitor_loop' -RedirectStandardOutput '%LOG_FILE%' -RedirectStandardError '%LOG_ERR_FILE%' -WorkingDirectory '%PROJECT_DIR%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%PID_FILE%' -Encoding ASCII"
     
     timeout /t 2 /nobreak >nul
     if not exist "%PID_FILE%" goto :eof
@@ -60,6 +62,7 @@ goto :eof
     set /p NEW_PID= < "%PID_FILE%"
     echo Monitor started with PID: !NEW_PID!
     echo Logs are being written to %LOG_FILE%
+    echo Errors are being written to %LOG_ERR_FILE%
     goto :eof
 
 :stop_monitor
@@ -135,8 +138,8 @@ goto :eof
 :launch_web
     echo Starting Web server on port %WEB_PORT%...
     set PORT=%WEB_PORT%
-    REM Using cmd to wrap python execution for redirection
-    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c python server.py >> """%WEB_LOG_FILE%""" 2>&1' -WorkingDirectory '%PROJECT_DIR%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%WEB_PID_FILE%' -Encoding ASCII"
+    REM Using comma-separated ArgumentList for robustness
+    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'python', 'server.py' -RedirectStandardOutput '%WEB_LOG_FILE%' -RedirectStandardError '%WEB_LOG_ERR_FILE%' -WorkingDirectory '%PROJECT_DIR%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%WEB_PID_FILE%' -Encoding ASCII"
     
     timeout /t 2 /nobreak >nul
     if not exist "%WEB_PID_FILE%" goto :eof
