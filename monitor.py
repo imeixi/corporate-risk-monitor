@@ -56,51 +56,72 @@ def get_bankruptcy_info(company_name):
             # 访问目标网站
             url = "https://pccz.court.gov.cn/pcajxxw/index/xxwsy"
             try:
+                print(f"正在访问目标 URL: {url}")
                 # 优化: 不等待所有网络资源加载完，只等待DOM加载
                 page.goto(url, timeout=60000, wait_until="domcontentloaded")
+                print("页面主体 HTML 已加载完成")
                 
                 # 定位输入框：使用 ID 'search'
                 search_input = page.locator("#search").first
                 
                 # 显式等待搜索框出现
                 try:
+                    print("正在等待搜索输入框出现...")
                     search_input.wait_for(state="visible", timeout=30000)
+                    print("搜索输入框已可见")
                 except Exception:
+                    print("等待搜索输入框超时，尝试继续执行...")
                     pass
 
                 if search_input.is_visible():
+                    print(f"正在输入查询关键词: {company_name}")
                     search_input.fill(company_name)
-                    page.wait_for_timeout(random.randint(2000, 5000)) # 随机停留2-5秒
+                    wait_time = random.randint(2000, 5000)
+                    print(f"输入完成，随机等待 {wait_time/1000:.1f} 秒...")
+                    page.wait_for_timeout(wait_time)
                     
                     # 精确匹配搜索按钮：使用 ID 'qzss_search'
                     search_btn = page.locator("#qzss_search").first
                     
                     if search_btn.is_visible():
+                        print("点击搜索按钮，准备捕获新标签页...")
                         # 捕获新打开的标签页
                         with context.expect_page() as new_page_info:
                             search_btn.click()
                         
                         results_page = new_page_info.value
+                        print(f"新标签页已捕获: {results_page.url}")
+                        
                         results_page.wait_for_load_state("domcontentloaded")
+                        print("结果页 DOM 已加载完成")
                         
                         # 等待数据加载
-                        results_page.wait_for_timeout(random.randint(2000, 5000)) # 随机停留2-5秒
+                        wait_time = random.randint(2000, 5000)
+                        print(f"正在等待数据渲染，随机停留 {wait_time/1000:.1f} 秒...")
+                        results_page.wait_for_timeout(wait_time)
                         
                         # 在新页面抓取结果
+                        print("正在提取表格数据...")
                         rows = results_page.locator("tr").filter(has_text=company_name).all()
                         if rows:
+                            print(f"找到 {len(rows)} 条相关记录")
                             for row in rows:
                                 text = row.inner_text().strip().replace("\n", " ")
                                 if text:
                                     bankruptcy_data.append(text)
                         else:
                             if results_page.locator("text=没有找到").is_visible() or results_page.locator("text=无记录").is_visible():
-                                pass 
+                                print("结果页明确显示：无记录")
+                            else:
+                                print("未找到具体记录，可能未查询到相关信息")
                         
                         results_page.close()
+                        print("已关闭结果标签页")
                     else:
+                        print("错误：未找到查询按钮")
                         bankruptcy_data.append("未找到查询按钮，无法自动提交。")
                 else:
+                    print("错误：未找到搜索框")
                     bankruptcy_data.append("未找到搜索框，无法自动输入。")
 
             except Exception as e:
