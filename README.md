@@ -18,7 +18,9 @@
 2. **安装依赖**:
    ```bash
    pip install -r requirements.txt
-   playwright install
+   # 4. 安装Playwright浏览器
+   playwright install chromium
+   playwright install-deps chromium  # Linux需要
    ```
 
 ## 使用方法
