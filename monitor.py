@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import time
+import random
 import urllib.parse
 import sys
 import datetime
@@ -45,7 +46,7 @@ def get_bankruptcy_info(company_name):
     bankruptcy_data = []
     try:
         with sync_playwright() as p:
-            # 启动浏览器
+            # 恢复无头模式
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
@@ -55,46 +56,48 @@ def get_bankruptcy_info(company_name):
             # 访问目标网站
             url = "https://pccz.court.gov.cn/pcajxxw/index/xxwsy"
             try:
-                page.goto(url, timeout=30000)
-                page.wait_for_load_state("networkidle")
+                # 优化: 不等待所有网络资源加载完，只等待DOM加载
+                page.goto(url, timeout=60000, wait_until="domcontentloaded")
                 
-                # 定位输入框：由于没有确切ID，尝试通过 placeholder 或通用属性
-                # 常见 placeholder: "请输入债务人名称", "请输入案号" 等
-                # 尝试找到页面上主要的搜索输入框
-                search_input = page.locator("input[placeholder*='名称'], input[placeholder*='案号']").first
-                if not search_input.is_visible():
-                     # 如果找不到特定placeholder，尝试找所有文本输入框的第一个
-                     search_input = page.locator("input[type='text']").first
+                # 定位输入框：使用 ID 'search'
+                search_input = page.locator("#search").first
+                
+                # 显式等待搜索框出现
+                try:
+                    search_input.wait_for(state="visible", timeout=30000)
+                except Exception:
+                    pass
 
                 if search_input.is_visible():
                     search_input.fill(company_name)
+                    page.wait_for_timeout(random.randint(2000, 5000)) # 随机停留2-5秒
                     
-                    # 点击查询按钮 (通常包含 "查询" 或 "搜索" 文本)
-                    search_btn = page.locator("text=查询").first
-                    if not search_btn.is_visible():
-                         search_btn = page.locator("button").filter(has_text="查询").first
+                    # 精确匹配搜索按钮：使用 ID 'qzss_search'
+                    search_btn = page.locator("#qzss_search").first
                     
                     if search_btn.is_visible():
-                        search_btn.click()
-                        # 等待数据加载
-                        page.wait_for_timeout(3000)
+                        # 捕获新打开的标签页
+                        with context.expect_page() as new_page_info:
+                            search_btn.click()
                         
-                        # 尝试抓取结果
-                        # 假设结果会在表格中显示
-                        # 寻找包含公司名称的行
-                        rows = page.locator("tr").filter(has_text=company_name).all()
+                        results_page = new_page_info.value
+                        results_page.wait_for_load_state("domcontentloaded")
+                        
+                        # 等待数据加载
+                        results_page.wait_for_timeout(random.randint(2000, 5000)) # 随机停留2-5秒
+                        
+                        # 在新页面抓取结果
+                        rows = results_page.locator("tr").filter(has_text=company_name).all()
                         if rows:
                             for row in rows:
                                 text = row.inner_text().strip().replace("\n", " ")
                                 if text:
                                     bankruptcy_data.append(text)
                         else:
-                            # 检查是否有明确的 "无记录" 提示
-                            if page.locator("text=没有找到").is_visible() or page.locator("text=无记录").is_visible():
-                                pass # 确认为空
-                            else:
-                                # 也许是布局不同，尝试获取页面主要文本作为快照
+                            if results_page.locator("text=没有找到").is_visible() or results_page.locator("text=无记录").is_visible():
                                 pass 
+                        
+                        results_page.close()
                     else:
                         bankruptcy_data.append("未找到查询按钮，无法自动提交。")
                 else:
