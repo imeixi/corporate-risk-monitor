@@ -9,9 +9,12 @@ set "WEB_PID_FILE=%PROJECT_DIR%web.pid"
 set "WEB_LOG_FILE=%PROJECT_DIR%web.log"
 set "WEB_PORT=8000"
 
+REM Ensure we are in the project directory
+cd /d "%PROJECT_DIR%"
+
 REM Activate Virtual Environment (Assumes venv exists)
-if exist "%PROJECT_DIR%venv\Scripts\activate.bat" (
-    call "%PROJECT_DIR%venv\Scripts\activate.bat"
+if exist "venv\Scripts\activate.bat" (
+    call "venv\Scripts\activate.bat"
 )
 
 REM Command handling
@@ -26,30 +29,37 @@ if "%1"=="stop-all" goto stop_all
 if "%1"=="status-all" goto status_all
 if "%1"=="monitor_loop" goto monitor_loop
 
-echo Usage: %0 {start|stop|status|start-web|stop-web|status-web|start-all|stop-all|status-all}
+echo Usage: %~nx0 {start|stop|status|start-web|stop-web|status-web|start-all|stop-all|status-all}
 goto :eof
 
 :start_monitor
     if exist "%PID_FILE%" (
-        set /p PID=<"%PID_FILE%"
-        tasklist /FI "PID eq !PID!" 2>NUL | find /I /N "!PID!" >NUL
-        if !ERRORLEVEL! EQU 0 (
-            echo Monitor is already running (PID: !PID!).
-            goto :eof
-        ) else (
-            echo Found stale PID file. Removing...
-            del "%PID_FILE%"
-        )
+        goto check_monitor_pid
     )
+    goto launch_monitor
+
+:check_monitor_pid
+    set /p PID= < "%PID_FILE%"
+    tasklist /FI "PID eq !PID!" 2>NUL | find /I /N "!PID!" >NUL
+    if !ERRORLEVEL! EQU 0 (
+        echo Monitor is already running (PID: !PID!).
+        goto :eof
+    )
+    echo Found stale PID file. Removing...
+    del "%PID_FILE%"
+
+:launch_monitor
     echo Starting monitor in background...
     REM Using PowerShell to start process hidden and get PID
-    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c %~nx0 monitor_loop' -RedirectStandardOutput '%LOG_FILE%' -RedirectStandardError '%LOG_FILE%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%PID_FILE%' -Encoding ASCII"
+    REM Using cmd redirection >> log 2>&1 to combine streams
+    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c """%~f0""" monitor_loop >> """%LOG_FILE%""" 2>&1' -WorkingDirectory '%PROJECT_DIR%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%PID_FILE%' -Encoding ASCII"
     
-    if exist "%PID_FILE%" (
-        set /p NEW_PID=<"%PID_FILE%"
-        echo Monitor started with PID: !NEW_PID!
-        echo Logs are being written to %LOG_FILE%
-    )
+    timeout /t 2 /nobreak >nul
+    if not exist "%PID_FILE%" goto :eof
+    
+    set /p NEW_PID= < "%PID_FILE%"
+    echo Monitor started with PID: !NEW_PID!
+    echo Logs are being written to %LOG_FILE%
     goto :eof
 
 :stop_monitor
@@ -57,7 +67,7 @@ goto :eof
         echo Monitor is not running.
         goto :eof
     )
-    set /p PID=<"%PID_FILE%"
+    set /p PID= < "%PID_FILE%"
     echo Stopping monitor (PID: !PID!)...
     taskkill /F /PID !PID! >NUL 2>&1
     del "%PID_FILE%"
@@ -65,16 +75,16 @@ goto :eof
     goto :eof
 
 :status_monitor
-    if exist "%PID_FILE%" (
-        set /p PID=<"%PID_FILE%"
-        tasklist /FI "PID eq !PID!" 2>NUL | find /I /N "!PID!" >NUL
-        if !ERRORLEVEL! EQU 0 (
-            echo Monitor is running. PID: !PID!
-        ) else (
-            echo Monitor is NOT running (Stale PID file found).
-        )
-    ) else (
+    if not exist "%PID_FILE%" (
         echo Monitor is NOT running.
+        goto :eof
+    )
+    set /p PID= < "%PID_FILE%"
+    tasklist /FI "PID eq !PID!" 2>NUL | find /I /N "!PID!" >NUL
+    if !ERRORLEVEL! EQU 0 (
+        echo Monitor is running. PID: !PID!
+    ) else (
+        echo Monitor is NOT running (Stale PID file found).
     )
     goto :eof
 
@@ -109,24 +119,31 @@ goto :eof
 
 :start_web
     if exist "%WEB_PID_FILE%" (
-        set /p PID=<"%WEB_PID_FILE%"
-        tasklist /FI "PID eq !PID!" 2>NUL | find /I /N "!PID!" >NUL
-        if !ERRORLEVEL! EQU 0 (
-            echo Web server is already running (PID: !PID!).
-            goto :eof
-        ) else (
-            del "%WEB_PID_FILE%"
-        )
+        goto check_web_pid
     )
+    goto launch_web
+
+:check_web_pid
+    set /p PID= < "%WEB_PID_FILE%"
+    tasklist /FI "PID eq !PID!" 2>NUL | find /I /N "!PID!" >NUL
+    if !ERRORLEVEL! EQU 0 (
+        echo Web server is already running (PID: !PID!).
+        goto :eof
+    )
+    del "%WEB_PID_FILE%"
+
+:launch_web
     echo Starting Web server on port %WEB_PORT%...
     set PORT=%WEB_PORT%
-    powershell -Command "$p = Start-Process -FilePath 'python' -ArgumentList 'server.py' -RedirectStandardOutput '%WEB_LOG_FILE%' -RedirectStandardError '%WEB_LOG_FILE%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%WEB_PID_FILE%' -Encoding ASCII"
+    REM Using cmd to wrap python execution for redirection
+    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c python server.py >> """%WEB_LOG_FILE%""" 2>&1' -WorkingDirectory '%PROJECT_DIR%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%WEB_PID_FILE%' -Encoding ASCII"
     
-    if exist "%WEB_PID_FILE%" (
-        set /p NEW_PID=<"%WEB_PID_FILE%"
-        echo Web server started with PID: !NEW_PID!
-        echo Access at http://localhost:%WEB_PORT%
-    )
+    timeout /t 2 /nobreak >nul
+    if not exist "%WEB_PID_FILE%" goto :eof
+    
+    set /p NEW_PID= < "%WEB_PID_FILE%"
+    echo Web server started with PID: !NEW_PID!
+    echo Access at http://localhost:%WEB_PORT%
     goto :eof
 
 :stop_web
@@ -134,7 +151,7 @@ goto :eof
         echo Web server is not running.
         goto :eof
     )
-    set /p PID=<"%WEB_PID_FILE%"
+    set /p PID= < "%WEB_PID_FILE%"
     echo Stopping Web server (PID: !PID!)...
     taskkill /F /PID !PID! >NUL 2>&1
     del "%WEB_PID_FILE%"
@@ -142,15 +159,15 @@ goto :eof
     goto :eof
 
 :status_web
-    if exist "%WEB_PID_FILE%" (
-        set /p PID=<"%WEB_PID_FILE%"
-        tasklist /FI "PID eq !PID!" 2>NUL | find /I /N "!PID!" >NUL
-        if !ERRORLEVEL! EQU 0 (
-            echo Web server is running. PID: !PID!
-            echo URL: http://localhost:%WEB_PORT%
-        ) else (
-            echo Web server is NOT running.
-        )
+    if not exist "%WEB_PID_FILE%" (
+        echo Web server is NOT running.
+        goto :eof
+    )
+    set /p PID= < "%WEB_PID_FILE%"
+    tasklist /FI "PID eq !PID!" 2>NUL | find /I /N "!PID!" >NUL
+    if !ERRORLEVEL! EQU 0 (
+        echo Web server is running. PID: !PID!
+        echo URL: http://localhost:%WEB_PORT%
     ) else (
         echo Web server is NOT running.
     )
