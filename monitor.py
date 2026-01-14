@@ -149,7 +149,7 @@ def get_shixin_info(name, code):
             page.set_default_timeout(60000)
             
             # 访问失信被执行人查询页
-            url = "http://zxgk.court.gov.cn/shixin/"
+            url = "https://zxgk.court.gov.cn/shixin/"
             try:
                 page.goto(url)
                 page.wait_for_load_state("networkidle")
@@ -374,7 +374,7 @@ def generate_html(risks, bankruptcy_data, shixin_data):
                 <span class="badge badge-gov">政府</span> 全国企业破产重整案件信息网
                 <br><small style="color:#666">核心关注：在此搜索公司全名，查看是否有破产立案。</small>
             </a>
-            <a href="http://zxgk.court.gov.cn/" target="_blank" class="link-item">
+            <a href="https://zxgk.court.gov.cn/" target="_blank" class="link-item">
                 <span class="badge badge-gov">政府</span> 中国执行信息公开网
                 <br><small style="color:#666">核心关注：查询是否被列为“失信被执行人”。组织机构代码: {CREDIT_CODE[8:17]}</small>
             </a>
