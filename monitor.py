@@ -112,118 +112,7 @@ def get_bankruptcy_info(company_name):
 
     return bankruptcy_data
 
-def get_shixin_info(name, code):
-    print(f"正在查询中国执行信息公开网: {name} / {code}...")
-    shixin_data = []
-    
-    # 浏览器启动参数优化
-    browser_args = [
-        "--disable-blink-features=AutomationControlled",
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--disable-gpu",
-    ]
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=browser_args
-            )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-                viewport={"width": 1920, "height": 1080},
-                device_scale_factor=1,
-            )
-            
-            # 注入反爬脚本: 隐藏 webdriver 属性
-            context.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            """)
-
-            page = context.new_page()
-            page.set_default_timeout(60000)
-            
-            # 访问失信被执行人查询页
-            url = "https://zxgk.court.gov.cn/shixin/"
-            try:
-                page.goto(url)
-                page.wait_for_load_state("networkidle")
-                
-                # 检查是否被拦截/验证码页面
-                if "验证" in page.title():
-                     print("警告: 可能遇到了验证码拦截页面")
-
-                # 等待输入框出现
-                name_input = page.locator("#pName, input[name='pName']").first
-                name_input.wait_for(state="visible", timeout=60000)
-                name_input.fill(name)
-
-                # 填写身份证号码/组织机构代码
-                code_input = page.locator("#pCardNum, #pCode, input[name='pCardNum'], input[name='cardNum']").first
-                if code_input.is_visible():
-                    code_input.fill(code)
-                else:
-                    print("未找到代码输入框，尝试直接搜索...")
-
-                # 尝试选择省份: 北京
-                try:
-                    province_select = page.locator("select").first
-                    if province_select.is_visible():
-                        options = province_select.locator("option").all_inner_texts()
-                        target_option = None
-                        for opt in options:
-                            if "北京" in opt:
-                                target_option = opt
-                                break
-                        
-                        if target_option:
-                            province_select.select_option(label=target_option)
-                            print(f"已选择省份: {target_option}")
-                except Exception as e:
-                    print(f"选择省份失败 (非致命错误): {e}")
-                
-                # 处理验证码
-                yzm_input = page.locator("#pYzm")
-                if yzm_input.is_visible():
-                    captcha_img = page.locator("img[src*='captcha'], img[src*='yzm'], #yzmImg").first
-                    if captcha_img.is_visible():
-                        print("点击验证码图片以刷新...")
-                        captcha_img.click()
-                        page.wait_for_timeout(3000)
-                    shixin_data.append("检测到图形验证码，程序尝试刷新但无法自动识别。请点击报告中的链接手动核实。")
-                else:
-                    # 点击查询
-                    search_btn = page.locator("button:has-text('查询'), input[value='查询'], .search_btn").first
-                    if search_btn.is_visible():
-                        search_btn.click()
-                        page.wait_for_timeout(3000)
-                    else:
-                         page.locator("text=查询").first.click()
-                    
-                    # 检查结果
-                    if page.locator("text=验证码错误").first.is_visible():
-                         shixin_data.append("验证码校验失败（此网站有强制验证码）。")
-                    elif page.locator("text=没有找到").first.is_visible():
-                         pass # 无记录
-                    else:
-                         rows = page.locator("tr").all()
-                         for row in rows:
-                             text = row.inner_text().strip().replace("\n", " ")
-                             if name in text:
-                                 shixin_data.append(text)
-            except Exception as e:
-                print(f"查询异常详情: {e}")
-                shixin_data.append(f"查询异常: {str(e)[:100]}")
-            
-            browser.close()
-    except Exception as e:
-        shixin_data.append(f"驱动异常: {e}")
-    return shixin_data
 
 def send_feishu_notification(risks, bankruptcy_data, shixin_data):
     webhook_url = os.environ.get("FEISHU_WEBHOOK_URL")
@@ -303,25 +192,6 @@ def generate_html(risks, bankruptcy_data, shixin_data):
         </div>
         """
 
-    shixin_html = ""
-    if shixin_data:
-        list_items = "".join([f"<li class='risk-item'>❌ {item}</li>" for item in shixin_data])
-        shixin_html = f"""
-        <div class="card" style="border-left: 5px solid #c0392b;">
-            <h2>❌ 失信被执行人信息 (自动查询结果)</h2>
-            <ul class="risk-list">
-                {list_items}
-            </ul>
-        </div>
-        """
-    else:
-        shixin_html = f"""
-        <div class="card">
-            <h2>👤 失信被执行人信息 (自动查询结果)</h2>
-            <p class='status-ok'>✅ 暂未在中国执行信息公开网发现该姓名/代码的失信记录。</p>
-        </div>
-        """
-
     html_content = f"""
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -360,7 +230,6 @@ def generate_html(risks, bankruptcy_data, shixin_data):
     </div>
 
     {bankruptcy_html}
-    {shixin_html}
 
     <div class="card">
         <h2>🔍 实时舆情检测 (Baidu)</h2>
@@ -405,7 +274,7 @@ def main():
     print(f"正在监控: {COMPANY_NAME}...")
     risks = get_baidu_news()
     bankruptcy_data = get_bankruptcy_info(COMPANY_NAME)
-    shixin_data = get_shixin_info("刘斌", "MA0044Y57")
+    shixin_data = []
     generate_html(risks, bankruptcy_data, shixin_data)
     send_feishu_notification(risks, bankruptcy_data, shixin_data)
 
