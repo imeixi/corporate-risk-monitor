@@ -52,17 +52,15 @@ goto :eof
 
 :launch_monitor
     echo Starting monitor in background...
-    REM Using PowerShell to start process hidden and get PID
-    REM Using comma-separated ArgumentList and escaped quotes for robustness
-    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', '\"%~f0\"', 'monitor_loop' -RedirectStandardOutput '%LOG_FILE%' -RedirectStandardError '%LOG_ERR_FILE%' -WorkingDirectory '%PROJECT_DIR%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%PID_FILE%' -Encoding ASCII"
+    REM Using PowerShell to start process in a new window and tee output to log file
+    powershell -Command "$p = Start-Process powershell -ArgumentList '-NoExit', '-Command', \"& { cmd /c '\"\"%~f0\"\"' monitor_loop 2>&1 | Tee-Object -FilePath '%LOG_FILE%' }\" -PassThru; $p.Id | Out-File '%PID_FILE%' -Encoding ASCII"
     
     timeout /t 2 /nobreak >nul
     if not exist "%PID_FILE%" goto :eof
     
     set /p NEW_PID= < "%PID_FILE%"
     echo Monitor started with PID: !NEW_PID!
-    echo Logs are being written to %LOG_FILE%
-    echo Errors are being written to %LOG_ERR_FILE%
+    echo Logs are being displayed in a new window and written to %LOG_FILE%
     goto :eof
 
 :stop_monitor
@@ -72,7 +70,7 @@ goto :eof
     )
     set /p PID= < "%PID_FILE%"
     echo Stopping monitor (PID: !PID!)...
-    taskkill /F /PID !PID! >NUL 2>&1
+    taskkill /T /F /PID !PID! >NUL 2>&1
     del "%PID_FILE%"
     echo Monitor stopped.
     goto :eof
@@ -94,7 +92,7 @@ goto :eof
 :monitor_loop
     echo [%DATE% %TIME%] Starting monitor service...
     echo [%DATE% %TIME%] Performing immediate run...
-    python monitor.py
+    python -u monitor.py
     
     echo Starting monitor scheduler... Daily at 10:00 and 17:00.
     
@@ -107,6 +105,8 @@ goto :eof
     set "H=!H: =0!"
     set "CURRENT_TIME=!H!:!M!"
     
+    echo [%DATE% %TIME%] Heartbeat: Monitor is alive. Checking schedule (Current: !CURRENT_TIME!)...
+    
     if "!CURRENT_TIME!"=="10:00" call :run_task
     if "!CURRENT_TIME!"=="17:00" call :run_task
     
@@ -115,7 +115,7 @@ goto :eof
 
 :run_task
     echo [%DATE% %TIME%] Starting scheduled monitoring task...
-    python monitor.py
+    python -u monitor.py
     echo [%DATE% %TIME%] Task completed.
     timeout /t 61 /nobreak >nul
     goto :eof
@@ -138,8 +138,8 @@ goto :eof
 :launch_web
     echo Starting Web server on port %WEB_PORT%...
     set PORT=%WEB_PORT%
-    REM Using comma-separated ArgumentList for robustness
-    powershell -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'python', 'server.py' -RedirectStandardOutput '%WEB_LOG_FILE%' -RedirectStandardError '%WEB_LOG_ERR_FILE%' -WorkingDirectory '%PROJECT_DIR%' -PassThru -WindowStyle Hidden; $p.Id | Out-File '%WEB_PID_FILE%' -Encoding ASCII"
+    REM Using PowerShell to start process in a new window and tee output to log file
+    powershell -Command "$p = Start-Process powershell -ArgumentList '-NoExit', '-Command', \"& { python -u server.py 2>&1 | Tee-Object -FilePath '%WEB_LOG_FILE%' }\" -PassThru; $p.Id | Out-File '%WEB_PID_FILE%' -Encoding ASCII"
     
     timeout /t 2 /nobreak >nul
     if not exist "%WEB_PID_FILE%" goto :eof
@@ -147,6 +147,7 @@ goto :eof
     set /p NEW_PID= < "%WEB_PID_FILE%"
     echo Web server started with PID: !NEW_PID!
     echo Access at http://localhost:%WEB_PORT%
+    echo Logs are being displayed in a new window and written to %WEB_LOG_FILE%
     goto :eof
 
 :stop_web
@@ -156,7 +157,7 @@ goto :eof
     )
     set /p PID= < "%WEB_PID_FILE%"
     echo Stopping Web server (PID: !PID!)...
-    taskkill /F /PID !PID! >NUL 2>&1
+    taskkill /T /F /PID !PID! >NUL 2>&1
     del "%WEB_PID_FILE%"
     echo Web server stopped.
     goto :eof
