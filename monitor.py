@@ -6,7 +6,11 @@ import urllib.parse
 import sys
 import datetime
 import os
+import logging
 from playwright.sync_api import sync_playwright
+
+# Configure logging
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 
 # Company Information
 COMPANY_NAME = "北京中兵数字科技集团有限公司"
@@ -38,11 +42,11 @@ def get_baidu_news():
                             risks.append({"title": title_text, "link": link})
                             break
     except Exception as e:
-        print(f"Error fetching news: {e}")
+        logging.error(f"Error fetching news: {e}")
     return risks
 
 def get_bankruptcy_info(company_name):
-    print(f"正在查询全国企业破产重整案件信息网: {company_name}...")
+    logging.warning(f"正在查询全国企业破产重整案件信息网: {company_name}...")
     bankruptcy_data = []
     try:
         with sync_playwright() as p:
@@ -56,82 +60,82 @@ def get_bankruptcy_info(company_name):
             # 访问目标网站
             url = "https://pccz.court.gov.cn/pcajxxw/index/xxwsy"
             try:
-                print(f"正在访问目标 URL: {url}")
+                logging.warning(f"正在访问目标 URL: {url}")
                 # 优化: 不等待所有网络资源加载完，只等待DOM加载
                 page.goto(url, timeout=60000, wait_until="domcontentloaded")
-                print("页面主体 HTML 已加载完成")
+                logging.warning("页面主体 HTML 已加载完成")
                 
                 # 定位输入框：使用 ID 'search'
                 search_input = page.locator("#search").first
                 
                 # 显式等待搜索框出现
                 try:
-                    print("正在等待搜索输入框出现...")
+                    logging.warning("正在等待搜索输入框出现...")
                     search_input.wait_for(state="visible", timeout=30000)
-                    print("搜索输入框已可见")
+                    logging.warning("搜索输入框已可见")
                 except Exception:
-                    print("等待搜索输入框超时，尝试继续执行...")
+                    logging.warning("等待搜索输入框超时，尝试继续执行...")
                     pass
 
                 if search_input.is_visible():
-                    print(f"正在输入查询关键词: {company_name}")
+                    logging.warning(f"正在输入查询关键词: {company_name}")
                     search_input.fill(company_name)
                     wait_time = random.randint(2000, 5000)
-                    print(f"输入完成，随机等待 {wait_time/1000:.1f} 秒...")
+                    logging.warning(f"输入完成，随机等待 {wait_time/1000:.1f} 秒...")
                     page.wait_for_timeout(wait_time)
                     
                     # 精确匹配搜索按钮：使用 ID 'qzss_search'
                     search_btn = page.locator("#qzss_search").first
                     
                     if search_btn.is_visible():
-                        print("点击搜索按钮，准备捕获新标签页...")
+                        logging.warning("点击搜索按钮，准备捕获新标签页...")
                         # 捕获新打开的标签页
                         with context.expect_page() as new_page_info:
                             search_btn.click()
                         
                         results_page = new_page_info.value
-                        print(f"新标签页已捕获: {results_page.url}")
+                        logging.warning(f"新标签页已捕获: {results_page.url}")
                         
                         results_page.wait_for_load_state("domcontentloaded")
-                        print("结果页 DOM 已加载完成")
+                        logging.warning("结果页 DOM 已加载完成")
                         
                         # 等待数据加载
                         wait_time = random.randint(2000, 5000)
-                        print(f"正在等待数据渲染，随机停留 {wait_time/1000:.1f} 秒...")
+                        logging.warning(f"正在等待数据渲染，随机停留 {wait_time/1000:.1f} 秒...")
                         results_page.wait_for_timeout(wait_time)
                         
                         # 在新页面抓取结果
-                        print("正在提取表格数据...")
+                        logging.warning("正在提取表格数据...")
                         rows = results_page.locator("tr").filter(has_text=company_name).all()
                         if rows:
-                            print(f"找到 {len(rows)} 条相关记录")
+                            logging.warning(f"找到 {len(rows)} 条相关记录")
                             for row in rows:
                                 text = row.inner_text().strip().replace("\n", " ")
                                 if text:
                                     bankruptcy_data.append(text)
                         else:
                             if results_page.locator("text=没有找到").is_visible() or results_page.locator("text=无记录").is_visible():
-                                print("结果页明确显示：无记录")
+                                logging.warning("结果页明确显示：无记录")
                             else:
-                                print("未找到具体记录，可能未查询到相关信息")
+                                logging.warning("未找到具体记录，可能未查询到相关信息")
                         
                         results_page.close()
-                        print("已关闭结果标签页")
+                        logging.warning("已关闭结果标签页")
                     else:
-                        print("错误：未找到查询按钮")
+                        logging.error("错误：未找到查询按钮")
                         bankruptcy_data.append("未找到查询按钮，无法自动提交。")
                 else:
-                    print("错误：未找到搜索框")
+                    logging.error("错误：未找到搜索框")
                     bankruptcy_data.append("未找到搜索框，无法自动输入。")
 
             except Exception as e:
-                print(f"页面操作异常: {e}")
+                logging.error(f"页面操作异常: {e}")
                 bankruptcy_data.append(f"查询过程出错: {str(e)[:100]}")
 
             browser.close()
             
     except Exception as e:
-        print(f"Playwright 运行失败 (请确保已运行 'playwright install'): {e}")
+        logging.error(f"Playwright 运行失败 (请确保已运行 'playwright install'): {e}")
         bankruptcy_data.append("自动化浏览器启动失败，请检查环境。")
 
     return bankruptcy_data
@@ -141,7 +145,7 @@ def get_bankruptcy_info(company_name):
 def send_feishu_notification(risks, bankruptcy_data, shixin_data):
     webhook_url = os.environ.get("FEISHU_WEBHOOK_URL")
     if not webhook_url:
-        print("\n[!] 未配置 FEISHU_WEBHOOK_URL 环境变量，跳过发送飞书通知。")
+        logging.warning("未配置 FEISHU_WEBHOOK_URL 环境变量，跳过发送飞书通知。")
         return
 
     risk_count = len(risks)
@@ -186,11 +190,11 @@ def send_feishu_notification(risks, bankruptcy_data, shixin_data):
     try:
         response = requests.post(webhook_url, json={"msg_type": "interactive", "card": card})
         if response.status_code == 200:
-            print("\n[√] 飞书通知发送成功")
+            logging.warning("飞书通知发送成功")
         else:
-            print(f"\n[x] 飞书通知发送失败: {response.text}")
+            logging.error(f"飞书通知发送失败: {response.text}")
     except Exception as e:
-        print(f"\n[x] 发送飞书异常: {e}")
+        logging.error(f"发送飞书异常: {e}")
 
 def generate_html(risks, bankruptcy_data, shixin_data):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -292,10 +296,10 @@ def generate_html(risks, bankruptcy_data, shixin_data):
 """
     with open("risk_report.html", "w", encoding="utf-8") as f:
         f.write(html_content)
-    print(f"\n[√] 报告已生成: {os.path.abspath('risk_report.html')}")
+    logging.warning(f"报告已生成: {os.path.abspath('risk_report.html')}")
 
 def main():
-    print(f"正在监控: {COMPANY_NAME}...")
+    logging.warning(f"正在监控: {COMPANY_NAME}...")
     risks = get_baidu_news()
     bankruptcy_data = get_bankruptcy_info(COMPANY_NAME)
     shixin_data = []

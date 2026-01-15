@@ -1,6 +1,11 @@
 import http.server
 import socketserver
 import os
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 
 PORT = 8000
 REPORT_FILE = "risk_report.html"
@@ -31,8 +36,8 @@ if __name__ == "__main__":
     # Allow port to be set via environment variable
     port = int(os.environ.get("PORT", PORT))
     
-    print(f"Starting Report Server on port {port}...")
-    print(f"Access the report at http://localhost:{port}")
+    logging.info(f"Starting Report Server on port {port}...")
+    logging.info(f"Access the report at http://localhost:{port}")
     
     with socketserver.TCPServer(("", port), ReportHandler) as httpd:
         try:

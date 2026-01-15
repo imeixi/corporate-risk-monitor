@@ -204,7 +204,7 @@ goto :eof
     set "START_ALL_MODE="
     
     echo Opening combined log viewer...
-    start "Monitor & Web Logs" powershell -NoExit -Command "Get-Content -Path '%LOG_FILE%', '%WEB_LOG_FILE%' -Wait"
+    start "Monitor & Web Logs" powershell -NoExit -Command "Get-Content -Path '%LOG_FILE%', '%WEB_LOG_FILE%' -Wait | ForEach-Object { if ($_ -match 'ERROR') { Write-Host $_ -ForegroundColor Red } elseif ($_ -match 'WARNING') { Write-Host $_ -ForegroundColor Yellow } elseif ($_ -match 'INFO') { Write-Host $_ -ForegroundColor Cyan } else { Write-Host $_ } }"
     goto :eof
 
 :stop_all
